@@ -1,17 +1,67 @@
-{
-  "name": "http-info-client-server",
-  "version": "1.0.0",
-  "description": "HTTP client/server app for collecting internet content by keywords with progress and offline LocalStorage reading.",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "express": "^4.19.2"
-  }
-}
+# HTTP Info Client Server
+
+Проект реализует HTTP клиент и сервер для сбора информации из интернета по ключевым словам.
+
+## Возможности
+
+* сервер хранит список ключевых слов и соответствующих URL;
+* клиент отправляет ключевое слово на сервер;
+* сервер возвращает список URL;
+* пользователь выбирает URL;
+* клиент скачивает контент через сервер;
+* отображается размер и прогресс загрузки;
+* загруженный контент сохраняется в LocalStorage;
+* сохранённый контент можно открыть оффлайн;
+* ошибки обрабатываются и отображаются пользователю.
+
+## Технологии
+
+* JavaScript
+* Node.js
+* Express
+* HTML
+* CSS
+* Fetch API
+* LocalStorage
+
+## Запуск локально
+
+Установить зависимости:
+
+```bash
+npm install
+```
+
+Запустить сервер:
+
+```bash
+npm start
+```
+
+Открыть в браузере:
+
+```text
+http://localhost:3000
+```
+
+## Ключевые слова для проверки
+
+Можно использовать:
+
+```text
+javascript
+nodejs
+html
+css
+test
+```
+
+## Деплой
+
+Проект можно развернуть на Vercel.
+
+После деплоя приложение будет доступно по публичной ссылке вида:
+
+```text
+https://название-проекта.vercel.app
+```

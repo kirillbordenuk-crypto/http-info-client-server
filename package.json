@@ -1,180 +1,292 @@
-:root {
-  color-scheme: light dark;
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f2f4f8;
-  color: #18202b;
+const STORAGE_KEY = 'downloadedContentItems:v1';
+
+const elements = {
+  keywordForm: document.querySelector('#keywordForm'),
+  keywordInput: document.querySelector('#keywordInput'),
+  keywordsHint: document.querySelector('#keywordsHint'),
+  urlList: document.querySelector('#urlList'),
+  downloadStatus: document.querySelector('#downloadStatus'),
+  progressBar: document.querySelector('#progressBar'),
+  cancelButton: document.querySelector('#cancelButton'),
+  refreshStorageButton: document.querySelector('#refreshStorageButton'),
+  clearStorageButton: document.querySelector('#clearStorageButton'),
+  savedList: document.querySelector('#savedList'),
+  contentMeta: document.querySelector('#contentMeta'),
+  contentViewer: document.querySelector('#contentViewer'),
+  urlItemTemplate: document.querySelector('#urlItemTemplate'),
+  savedItemTemplate: document.querySelector('#savedItemTemplate')
+};
+
+let activeController = null;
+
+function setStatus(message, type = 'muted') {
+  elements.downloadStatus.textContent = message;
+  elements.downloadStatus.className = `status ${type}`;
 }
 
-* {
-  box-sizing: border-box;
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'размер неизвестен';
+  if (bytes === 0) return '0 Б';
+
+  const units = ['Б', 'КБ', 'МБ', 'ГБ'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / Math.pow(1024, index);
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-body {
-  margin: 0;
-}
+async function requestJson(url) {
+  let response;
 
-.app {
-  width: min(1100px, calc(100% - 32px));
-  margin: 32px auto;
-  display: grid;
-  gap: 18px;
-}
-
-.card {
-  background: #ffffff;
-  border: 1px solid #d9e1ec;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 10px 30px rgba(27, 39, 57, 0.08);
-}
-
-.hero {
-  background: linear-gradient(135deg, #eef5ff, #ffffff);
-}
-
-h1,
-h2 {
-  margin-top: 0;
-}
-
-.row,
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-input {
-  min-width: min(100%, 360px);
-  flex: 1;
-  padding: 12px 14px;
-  border: 1px solid #b7c4d6;
-  border-radius: 10px;
-  font-size: 16px;
-}
-
-button {
-  border: 0;
-  border-radius: 10px;
-  padding: 12px 16px;
-  background: #1d65d8;
-  color: white;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-button:hover {
-  filter: brightness(0.95);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.secondary {
-  background: #536273;
-}
-
-.danger {
-  background: #c83232;
-}
-
-.hint,
-.muted {
-  color: #657386;
-}
-
-.list {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.item {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid #d9e1ec;
-  border-radius: 12px;
-  background: #fbfcff;
-}
-
-.item-main {
-  overflow-wrap: anywhere;
-}
-
-.item-title {
-  font-weight: 700;
-}
-
-.item-subtitle {
-  color: #657386;
-  font-size: 14px;
-  margin-top: 4px;
-}
-
-.status {
-  padding: 12px;
-  border: 1px dashed #aab7c8;
-  border-radius: 12px;
-  background: #fbfcff;
-}
-
-.status.error {
-  border-color: #d94141;
-  color: #a41d1d;
-  background: #fff4f4;
-}
-
-.status.success {
-  border-color: #1c9150;
-  color: #146a3a;
-  background: #f0fff6;
-}
-
-progress {
-  width: 100%;
-  height: 22px;
-  margin-top: 12px;
-}
-
-.viewer {
-  min-height: 240px;
-  max-height: 560px;
-  overflow: auto;
-  margin: 12px 0 0;
-  padding: 14px;
-  border: 1px solid #d9e1ec;
-  border-radius: 12px;
-  background: #0f1720;
-  color: #edf5ff;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    background: #10161f;
-    color: #edf5ff;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new Error('Сервер недоступен. Проверьте подключение или запустите Node.js сервер.');
   }
 
-  .card,
-  .item,
-  .status {
-    background: #162030;
-    border-color: #2f4158;
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('Сервер вернул некорректный JSON.');
   }
 
-  .hero {
-    background: linear-gradient(135deg, #16263f, #162030);
+  if (!response.ok) {
+    throw new Error(data.error || `Ошибка HTTP ${response.status}.`);
   }
 
-  input {
-    background: #10161f;
-    border-color: #40556f;
-    color: #edf5ff;
+  return data;
+}
+
+function getSavedItems() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+    return [];
   }
 }
+
+function saveItems(items) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch (error) {
+    if (error.name === 'QuotaExceededError') {
+      throw new Error('LocalStorage переполнен. Удалите старые материалы и повторите загрузку.');
+    }
+    throw new Error('Не удалось сохранить контент в LocalStorage.');
+  }
+}
+
+function addSavedItem(item) {
+  const items = getSavedItems();
+  items.unshift(item);
+  saveItems(items);
+  renderSavedItems();
+}
+
+function deleteSavedItem(id) {
+  const items = getSavedItems().filter((item) => item.id !== id);
+  saveItems(items);
+  renderSavedItems();
+}
+
+function renderUrlList(keyword, urls) {
+  elements.urlList.innerHTML = '';
+
+  urls.forEach((url) => {
+    const node = elements.urlItemTemplate.content.cloneNode(true);
+    const itemMain = node.querySelector('.item-main');
+    const button = node.querySelector('.download-button');
+
+    itemMain.innerHTML = `
+      <div class="item-title">${url}</div>
+      <div class="item-subtitle">Ключевое слово: ${keyword}</div>
+    `;
+
+    button.addEventListener('click', () => downloadContent(keyword, url));
+    elements.urlList.append(node);
+  });
+}
+
+function renderSavedItems() {
+  const items = getSavedItems();
+  elements.savedList.innerHTML = '';
+
+  if (!items.length) {
+    elements.savedList.innerHTML = '<p class="muted">В LocalStorage пока нет загруженного контента.</p>';
+    return;
+  }
+
+  items.forEach((item) => {
+    const node = elements.savedItemTemplate.content.cloneNode(true);
+    const itemMain = node.querySelector('.item-main');
+    const openButton = node.querySelector('.open-button');
+    const deleteButton = node.querySelector('.delete-button');
+
+    const date = new Date(item.downloadedAt).toLocaleString('ru-RU');
+    itemMain.innerHTML = `
+      <div class="item-title">${item.url}</div>
+      <div class="item-subtitle">${item.keyword} · ${formatBytes(item.size)} · ${date}</div>
+    `;
+
+    openButton.addEventListener('click', () => showSavedContent(item.id));
+    deleteButton.addEventListener('click', () => {
+      if (confirm('Удалить этот материал из LocalStorage?')) {
+        deleteSavedItem(item.id);
+      }
+    });
+
+    elements.savedList.append(node);
+  });
+}
+
+function showSavedContent(id) {
+  const item = getSavedItems().find((savedItem) => savedItem.id === id);
+
+  if (!item) {
+    elements.contentMeta.textContent = 'Материал не найден в LocalStorage.';
+    elements.contentViewer.textContent = '';
+    return;
+  }
+
+  const date = new Date(item.downloadedAt).toLocaleString('ru-RU');
+  elements.contentMeta.textContent = `${item.url} · ${item.contentType} · ${formatBytes(item.size)} · ${date}`;
+  elements.contentViewer.textContent = item.text;
+}
+
+async function loadKeywordsHint() {
+  try {
+    const data = await requestJson('/api/keywords');
+    elements.keywordsHint.textContent = `Доступные ключевые слова: ${data.keywords.join(', ')}`;
+  } catch (error) {
+    elements.keywordsHint.textContent = error.message;
+  }
+}
+
+async function handleKeywordSubmit(event) {
+  event.preventDefault();
+  const keyword = elements.keywordInput.value.trim();
+  elements.urlList.innerHTML = '';
+
+  if (!keyword) {
+    setStatus('Введите ключевое слово.', 'error');
+    return;
+  }
+
+  try {
+    const data = await requestJson(`/api/urls?keyword=${encodeURIComponent(keyword)}`);
+    renderUrlList(data.keyword, data.urls);
+    setStatus(`Найдено URL: ${data.urls.length}. Выберите один для загрузки.`, 'success');
+  } catch (error) {
+    setStatus(error.message, 'error');
+  }
+}
+
+async function downloadContent(keyword, url) {
+  if (activeController) {
+    activeController.abort();
+  }
+
+  activeController = new AbortController();
+  elements.cancelButton.hidden = false;
+  elements.progressBar.hidden = false;
+  elements.progressBar.value = 0;
+  elements.progressBar.removeAttribute('max');
+  setStatus('Подключение к серверу...', 'muted');
+
+  try {
+    const response = await fetch(`/api/download?url=${encodeURIComponent(url)}`, {
+      signal: activeController.signal
+    });
+
+    if (!response.ok) {
+      let message = `Ошибка HTTP ${response.status}.`;
+      try {
+        const data = await response.json();
+        message = data.error || message;
+      } catch {
+        // Ignore non-JSON error body.
+      }
+      throw new Error(message);
+    }
+
+    const total = Number(response.headers.get('content-length'));
+    const hasTotal = Number.isFinite(total) && total > 0;
+    const contentType = response.headers.get('content-type') || 'text/plain';
+    const reader = response.body?.getReader();
+
+    if (!reader) {
+      throw new Error('Браузер не поддерживает потоковое чтение ответа.');
+    }
+
+    if (hasTotal) {
+      elements.progressBar.max = total;
+    }
+
+    const decoder = new TextDecoder('utf-8');
+    const chunks = [];
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      received += value.byteLength;
+      chunks.push(decoder.decode(value, { stream: true }));
+
+      if (hasTotal) {
+        elements.progressBar.value = received;
+        const percent = Math.min(100, Math.round((received / total) * 100));
+        setStatus(`Загружено ${formatBytes(received)} из ${formatBytes(total)} (${percent}%).`, 'muted');
+      } else {
+        setStatus(`Загружено ${formatBytes(received)}. Общий размер неизвестен.`, 'muted');
+      }
+    }
+
+    chunks.push(decoder.decode());
+    const text = chunks.join('');
+
+    const item = {
+      id: crypto.randomUUID(),
+      keyword,
+      url,
+      contentType,
+      size: received,
+      text,
+      downloadedAt: new Date().toISOString()
+    };
+
+    addSavedItem(item);
+    showSavedContent(item.id);
+    setStatus(`Готово. Сохранено в LocalStorage: ${formatBytes(received)}.`, 'success');
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      setStatus('Загрузка отменена пользователем.', 'error');
+    } else {
+      setStatus(error.message, 'error');
+    }
+  } finally {
+    elements.cancelButton.hidden = true;
+    activeController = null;
+  }
+}
+
+elements.keywordForm.addEventListener('submit', handleKeywordSubmit);
+elements.refreshStorageButton.addEventListener('click', renderSavedItems);
+elements.clearStorageButton.addEventListener('click', () => {
+  if (confirm('Полностью очистить список загруженного контента?')) {
+    localStorage.removeItem(STORAGE_KEY);
+    renderSavedItems();
+    elements.contentMeta.textContent = 'Выберите сохранённый документ.';
+    elements.contentViewer.textContent = '';
+  }
+});
+elements.cancelButton.addEventListener('click', () => {
+  if (activeController) {
+    activeController.abort();
+  }
+});
+
+loadKeywordsHint();
+renderSavedItems();

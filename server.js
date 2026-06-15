@@ -1,292 +1,125 @@
-const STORAGE_KEY = 'downloadedContentItems:v1';
+# HTTP клиент и сервер для сбора информации из интернета
 
-const elements = {
-  keywordForm: document.querySelector('#keywordForm'),
-  keywordInput: document.querySelector('#keywordInput'),
-  keywordsHint: document.querySelector('#keywordsHint'),
-  urlList: document.querySelector('#urlList'),
-  downloadStatus: document.querySelector('#downloadStatus'),
-  progressBar: document.querySelector('#progressBar'),
-  cancelButton: document.querySelector('#cancelButton'),
-  refreshStorageButton: document.querySelector('#refreshStorageButton'),
-  clearStorageButton: document.querySelector('#clearStorageButton'),
-  savedList: document.querySelector('#savedList'),
-  contentMeta: document.querySelector('#contentMeta'),
-  contentViewer: document.querySelector('#contentViewer'),
-  urlItemTemplate: document.querySelector('#urlItemTemplate'),
-  savedItemTemplate: document.querySelector('#savedItemTemplate')
-};
+Учебный проект на JavaScript/Node.js.
 
-let activeController = null;
+## Что реализовано
 
-function setStatus(message, type = 'muted') {
-  elements.downloadStatus.textContent = message;
-  elements.downloadStatus.className = `status ${type}`;
+- На сервере хранится соответствие `ключевое слово -> список URL`.
+- Клиент отправляет ключевое слово серверу через `fetch`.
+- Сервер возвращает список URL.
+- Пользователь выбирает URL.
+- Клиент скачивает контент **через сервер**, а не напрямую с внешнего сайта.
+- Во время загрузки показываются размер и прогресс.
+- Загруженный текстовый контент сохраняется в `LocalStorage`.
+- Сохранённый контент можно открыть без повторной загрузки из интернета.
+- Есть обработка ошибок: пустой ввод, неизвестное слово, недоступный сервер, ошибка удалённого сайта, переполнение `LocalStorage`, отмена загрузки.
+
+## Стек
+
+- Node.js 18+
+- Express
+- HTML/CSS/JavaScript
+- Fetch API
+- LocalStorage
+
+## Запуск локально
+
+```bash
+git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ>
+cd http-info-client-server
+npm install
+npm start
+```
+
+Откройте в браузере:
+
+```text
+http://localhost:3000
+```
+
+Для разработки можно запустить режим с автоматическим перезапуском Node.js:
+
+```bash
+npm run dev
+```
+
+## Доступные ключевые слова
+
+- `javascript`
+- `nodejs`
+- `html`
+- `css`
+- `test`
+
+Список можно изменить в файле `server.js` в объекте `keywordUrlMap`.
+
+## API
+
+### Получить доступные ключевые слова
+
+```http
+GET /api/keywords
+```
+
+Пример ответа:
+
+```json
+{
+  "keywords": ["javascript", "nodejs", "html", "css", "test"]
 }
+```
 
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return 'размер неизвестен';
-  if (bytes === 0) return '0 Б';
+### Получить URL по ключевому слову
 
-  const units = ['Б', 'КБ', 'МБ', 'ГБ'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / Math.pow(1024, index);
-  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+```http
+GET /api/urls?keyword=javascript
+```
+
+Пример ответа:
+
+```json
+{
+  "keyword": "javascript",
+  "urls": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript"
+  ]
 }
+```
 
-async function requestJson(url) {
-  let response;
+### Скачать контент через сервер
 
-  try {
-    response = await fetch(url);
-  } catch {
-    throw new Error('Сервер недоступен. Проверьте подключение или запустите Node.js сервер.');
-  }
+```http
+GET /api/download?url=https%3A%2F%2Fwww.example.com%2F
+```
 
-  let data = null;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error('Сервер вернул некорректный JSON.');
-  }
+Сервер скачивает внешний ресурс и потоково передаёт его клиенту. Если удалённый сайт возвращает заголовок `Content-Length`, клиент использует его для отображения процента загрузки.
 
-  if (!response.ok) {
-    throw new Error(data.error || `Ошибка HTTP ${response.status}.`);
-  }
+## Безопасность
 
-  return data;
-}
+Маршрут `/api/download` разрешает скачивать только URL, которые есть в серверном списке `keywordUrlMap`. Это защищает сервер от использования как открытого прокси.
 
-function getSavedItems() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    localStorage.removeItem(STORAGE_KEY);
-    return [];
-  }
-}
+## Деплой
 
-function saveItems(items) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  } catch (error) {
-    if (error.name === 'QuotaExceededError') {
-      throw new Error('LocalStorage переполнен. Удалите старые материалы и повторите загрузку.');
-    }
-    throw new Error('Не удалось сохранить контент в LocalStorage.');
-  }
-}
+Проект можно опубликовать на Render, Railway, Fly.io или любом другом хостинге, который поддерживает Node.js.
 
-function addSavedItem(item) {
-  const items = getSavedItems();
-  items.unshift(item);
-  saveItems(items);
-  renderSavedItems();
-}
+Общие настройки:
 
-function deleteSavedItem(id) {
-  const items = getSavedItems().filter((item) => item.id !== id);
-  saveItems(items);
-  renderSavedItems();
-}
+- Build command: `npm install`
+- Start command: `npm start`
+- Environment: `Node.js`
+- Port: использовать переменную окружения `PORT`; в коде это уже учтено.
 
-function renderUrlList(keyword, urls) {
-  elements.urlList.innerHTML = '';
+После деплоя вставьте публичную ссылку на приложение в описание репозитория и/или в этот README.
 
-  urls.forEach((url) => {
-    const node = elements.urlItemTemplate.content.cloneNode(true);
-    const itemMain = node.querySelector('.item-main');
-    const button = node.querySelector('.download-button');
 
-    itemMain.innerHTML = `
-      <div class="item-title">${url}</div>
-      <div class="item-subtitle">Ключевое слово: ${keyword}</div>
-    `;
+## Деплой на Vercel
 
-    button.addEventListener('click', () => downloadContent(keyword, url));
-    elements.urlList.append(node);
-  });
-}
+1. Загрузите файлы проекта в GitHub-репозиторий.
+2. Откройте Vercel и выберите Add New → Project.
+3. Импортируйте репозиторий `http-info-client-server`.
+4. Framework Preset оставьте `Other`.
+5. Build Command оставьте пустым или стандартным.
+6. Output Directory оставьте пустым.
+7. Нажмите Deploy.
 
-function renderSavedItems() {
-  const items = getSavedItems();
-  elements.savedList.innerHTML = '';
-
-  if (!items.length) {
-    elements.savedList.innerHTML = '<p class="muted">В LocalStorage пока нет загруженного контента.</p>';
-    return;
-  }
-
-  items.forEach((item) => {
-    const node = elements.savedItemTemplate.content.cloneNode(true);
-    const itemMain = node.querySelector('.item-main');
-    const openButton = node.querySelector('.open-button');
-    const deleteButton = node.querySelector('.delete-button');
-
-    const date = new Date(item.downloadedAt).toLocaleString('ru-RU');
-    itemMain.innerHTML = `
-      <div class="item-title">${item.url}</div>
-      <div class="item-subtitle">${item.keyword} · ${formatBytes(item.size)} · ${date}</div>
-    `;
-
-    openButton.addEventListener('click', () => showSavedContent(item.id));
-    deleteButton.addEventListener('click', () => {
-      if (confirm('Удалить этот материал из LocalStorage?')) {
-        deleteSavedItem(item.id);
-      }
-    });
-
-    elements.savedList.append(node);
-  });
-}
-
-function showSavedContent(id) {
-  const item = getSavedItems().find((savedItem) => savedItem.id === id);
-
-  if (!item) {
-    elements.contentMeta.textContent = 'Материал не найден в LocalStorage.';
-    elements.contentViewer.textContent = '';
-    return;
-  }
-
-  const date = new Date(item.downloadedAt).toLocaleString('ru-RU');
-  elements.contentMeta.textContent = `${item.url} · ${item.contentType} · ${formatBytes(item.size)} · ${date}`;
-  elements.contentViewer.textContent = item.text;
-}
-
-async function loadKeywordsHint() {
-  try {
-    const data = await requestJson('/api/keywords');
-    elements.keywordsHint.textContent = `Доступные ключевые слова: ${data.keywords.join(', ')}`;
-  } catch (error) {
-    elements.keywordsHint.textContent = error.message;
-  }
-}
-
-async function handleKeywordSubmit(event) {
-  event.preventDefault();
-  const keyword = elements.keywordInput.value.trim();
-  elements.urlList.innerHTML = '';
-
-  if (!keyword) {
-    setStatus('Введите ключевое слово.', 'error');
-    return;
-  }
-
-  try {
-    const data = await requestJson(`/api/urls?keyword=${encodeURIComponent(keyword)}`);
-    renderUrlList(data.keyword, data.urls);
-    setStatus(`Найдено URL: ${data.urls.length}. Выберите один для загрузки.`, 'success');
-  } catch (error) {
-    setStatus(error.message, 'error');
-  }
-}
-
-async function downloadContent(keyword, url) {
-  if (activeController) {
-    activeController.abort();
-  }
-
-  activeController = new AbortController();
-  elements.cancelButton.hidden = false;
-  elements.progressBar.hidden = false;
-  elements.progressBar.value = 0;
-  elements.progressBar.removeAttribute('max');
-  setStatus('Подключение к серверу...', 'muted');
-
-  try {
-    const response = await fetch(`/api/download?url=${encodeURIComponent(url)}`, {
-      signal: activeController.signal
-    });
-
-    if (!response.ok) {
-      let message = `Ошибка HTTP ${response.status}.`;
-      try {
-        const data = await response.json();
-        message = data.error || message;
-      } catch {
-        // Ignore non-JSON error body.
-      }
-      throw new Error(message);
-    }
-
-    const total = Number(response.headers.get('content-length'));
-    const hasTotal = Number.isFinite(total) && total > 0;
-    const contentType = response.headers.get('content-type') || 'text/plain';
-    const reader = response.body?.getReader();
-
-    if (!reader) {
-      throw new Error('Браузер не поддерживает потоковое чтение ответа.');
-    }
-
-    if (hasTotal) {
-      elements.progressBar.max = total;
-    }
-
-    const decoder = new TextDecoder('utf-8');
-    const chunks = [];
-    let received = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      received += value.byteLength;
-      chunks.push(decoder.decode(value, { stream: true }));
-
-      if (hasTotal) {
-        elements.progressBar.value = received;
-        const percent = Math.min(100, Math.round((received / total) * 100));
-        setStatus(`Загружено ${formatBytes(received)} из ${formatBytes(total)} (${percent}%).`, 'muted');
-      } else {
-        setStatus(`Загружено ${formatBytes(received)}. Общий размер неизвестен.`, 'muted');
-      }
-    }
-
-    chunks.push(decoder.decode());
-    const text = chunks.join('');
-
-    const item = {
-      id: crypto.randomUUID(),
-      keyword,
-      url,
-      contentType,
-      size: received,
-      text,
-      downloadedAt: new Date().toISOString()
-    };
-
-    addSavedItem(item);
-    showSavedContent(item.id);
-    setStatus(`Готово. Сохранено в LocalStorage: ${formatBytes(received)}.`, 'success');
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      setStatus('Загрузка отменена пользователем.', 'error');
-    } else {
-      setStatus(error.message, 'error');
-    }
-  } finally {
-    elements.cancelButton.hidden = true;
-    activeController = null;
-  }
-}
-
-elements.keywordForm.addEventListener('submit', handleKeywordSubmit);
-elements.refreshStorageButton.addEventListener('click', renderSavedItems);
-elements.clearStorageButton.addEventListener('click', () => {
-  if (confirm('Полностью очистить список загруженного контента?')) {
-    localStorage.removeItem(STORAGE_KEY);
-    renderSavedItems();
-    elements.contentMeta.textContent = 'Выберите сохранённый документ.';
-    elements.contentViewer.textContent = '';
-  }
-});
-elements.cancelButton.addEventListener('click', () => {
-  if (activeController) {
-    activeController.abort();
-  }
-});
-
-loadKeywordsHint();
-renderSavedItems();
+Файл `vercel.json` уже настроен: `/api/*` направляется на Express-сервер, а клиентские файлы берутся из папки `public`.
